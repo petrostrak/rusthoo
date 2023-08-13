@@ -30,6 +30,16 @@ impl<'a> Lexer<'a> {
             return None;
         }
 
+        if self.content[0].is_numeric() {
+            let mut n = 0;
+            while n < self.content.len() && self.content[n].is_numeric() {
+                n += 1;
+            }
+            let token = &self.content[0..n];
+            self.content = &self.content[n..];
+            return Some(token);
+        }
+
         if self.content[0].is_alphabetic() {
             let mut n = 0;
             while n < self.content.len() && self.content[n].is_alphanumeric() {
@@ -40,7 +50,9 @@ impl<'a> Lexer<'a> {
             return Some(token);
         }
 
-        todo!()
+        let token = &self.content[0..1];
+        self.content = &self.content[1..];
+        Some(token)
     }
 }
 
