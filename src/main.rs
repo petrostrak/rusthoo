@@ -19,7 +19,7 @@ fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
 }
 
 fn main() -> io::Result<()> {
-    let dir_path = "docs.gl/g14";
+    let dir_path = "docs.gl/gl4";
     let dir = read_dir(dir_path)?;
 
     for file in dir {
