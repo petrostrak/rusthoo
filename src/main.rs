@@ -10,13 +10,16 @@ fn main() {
     });
     let event_reader = EventReader::new(file);
 
+    let mut content = String::new();
     for event in event_reader.into_iter() {
         let event = event.unwrap_or_else(|err| {
             eprintln!("ERROR: could not read next XML event: {err}");
             exit(1)
         });
         if let XmlEvent::Characters(text) = event {
-            println!("{text}");
+            content.push_str(&text);
         }
     }
+
+    println!("{content}");
 }
