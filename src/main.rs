@@ -29,6 +29,17 @@ impl<'a> Lexer<'a> {
         token
     }
 
+    fn chop_while<P>(&mut self, mut predicate: P) -> &'a [char]
+    where
+        P: FnMut(&char) -> bool,
+    {
+        let mut n = 0;
+        while n < self.content.len() && predicate(&self.content[n]) {
+            n += 1;
+        }
+        self.chop(n)
+    }
+
     fn next_token(&mut self) -> Option<&'a [char]> {
         // trim whitespaces from the left
         self.trim_left();
@@ -37,19 +48,11 @@ impl<'a> Lexer<'a> {
         }
 
         if self.content[0].is_numeric() {
-            let mut n = 0;
-            while n < self.content.len() && self.content[n].is_numeric() {
-                n += 1;
-            }
-            return Some(self.chop(n));
+            return Some(self.chop_while(|c| c.is_numeric()));
         }
 
         if self.content[0].is_alphabetic() {
-            let mut n = 0;
-            while n < self.content.len() && self.content[n].is_alphanumeric() {
-                n += 1;
-            }
-            return Some(self.chop(n));
+            return Some(self.chop_while(|c| c.is_alphanumeric()));
         }
 
         return Some(self.chop(1));
