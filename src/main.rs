@@ -87,7 +87,13 @@ fn main() -> io::Result<()> {
         .collect::<Vec<_>>();
 
     for token in Lexer::new(&content) {
-        println!("{token}", token = token.iter().collect::<String>());
+        println!(
+            "{token}",
+            token = token
+                .iter()
+                .map(|c| c.to_ascii_uppercase())
+                .collect::<String>()
+        );
     }
 
     // let dir_path = "docs.gl/gl4";
