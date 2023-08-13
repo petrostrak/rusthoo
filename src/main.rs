@@ -89,14 +89,23 @@ fn main() -> io::Result<()> {
         .chars()
         .collect::<Vec<_>>();
 
+    let mut table_freq = HashMap::<String, usize>::new();
+
     for token in Lexer::new(&content) {
-        println!(
-            "{token}",
-            token = token
-                .iter()
-                .map(|c| c.to_ascii_uppercase())
-                .collect::<String>()
-        );
+        let term = token
+            .iter()
+            .map(|c| c.to_ascii_uppercase())
+            .collect::<String>();
+
+        if let Some(freq) = table_freq.get_mut(&term) {
+            *freq += 1;
+        } else {
+            table_freq.insert(term, 1);
+        };
+
+        for (t, f) in table_freq.iter() {
+            println!("{t} => {f}");
+        }
     }
 
     // let dir_path = "docs.gl/gl4";
