@@ -102,10 +102,14 @@ fn main() -> io::Result<()> {
         } else {
             table_freq.insert(term, 1);
         };
+    }
 
-        for (t, f) in table_freq.iter() {
-            println!("{t} => {f}");
-        }
+    let mut stats = table_freq.iter().collect::<Vec<_>>();
+    stats.sort_by_key(|f| f.1);
+    stats.reverse();
+
+    for (t, f) in stats.iter().take(10) {
+        println!("{t} => {f}");
     }
 
     // let dir_path = "docs.gl/gl4";
