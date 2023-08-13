@@ -29,7 +29,25 @@ impl<'a> Lexer<'a> {
         if self.content.len() == 0 {
             return None;
         }
+
+        if self.content[0].is_alphabetic() {
+            let mut n = 0;
+            while n < self.content.len() && self.content[n].is_alphanumeric() {
+                n += 1;
+            }
+            let token = &self.content[0..n];
+            self.content = &self.content[n..];
+            return Some(token);
+        }
+
         todo!()
+    }
+}
+
+impl<'a> Iterator for Lexer<'a> {
+    type Item = &'a [char];
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token()
     }
 }
 
@@ -45,6 +63,7 @@ fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
     for event in event_reader.into_iter() {
         if let XmlEvent::Characters(text) = event.expect("TODO") {
             content.push_str(&text);
+            content.push_str(" ");
         }
     }
     Ok(content)
@@ -55,8 +74,9 @@ fn main() -> io::Result<()> {
         .chars()
         .collect::<Vec<_>>();
 
-    let lexer = Lexer::new(&content);
-    println!("{lexer:?}");
+    for token in Lexer::new(&content) {
+        println!("{token}", token = token.iter().collect::<String>());
+    }
 
     // let dir_path = "docs.gl/gl4";
     // let dir = read_dir(dir_path)?;
