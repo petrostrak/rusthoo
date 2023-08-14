@@ -88,53 +88,66 @@ type TermFreq = HashMap<String, usize>;
 type TermFreqIndex = HashMap<PathBuf, TermFreq>;
 
 fn main() -> io::Result<()> {
-    let dir_path = "docs.gl/gl4";
-    let dir = read_dir(dir_path)?;
-    let top_n = 20;
-    let mut tf_index = TermFreqIndex::new();
-
-    for file in dir {
-        let file_path = file?.path();
-
-        println!("Indexing {file_path:?}...");
-
-        let content = read_entire_xml_file(&file_path)?
-            .chars()
-            .collect::<Vec<_>>();
-
-        let mut table_freq = TermFreq::new();
-
-        for token in Lexer::new(&content) {
-            let term = token
-                .iter()
-                .map(|c| c.to_ascii_uppercase())
-                .collect::<String>();
-
-            if let Some(freq) = table_freq.get_mut(&term) {
-                *freq += 1;
-            } else {
-                table_freq.insert(term, 1);
-            };
-        }
-
-        let mut stats = table_freq.iter().collect::<Vec<_>>();
-        stats.sort_by_key(|f| f.1);
-        stats.reverse();
-
-        tf_index.insert(file_path, table_freq);
-    }
-
     let index_path = "index.json";
-    println!("Saving {index_path}...");
-    let index_file = File::create(index_path)?;
+    let index_file = File::open(index_path)?;
+    println!("Reading {index_path} index file...");
 
-    let json = serde_json::to_string(&tf_index)?;
-
-    serde_json::to_writer_pretty(index_file, &json)?;
-
-    for (path, tf) in tf_index {
-        println!("{path:?} has {count} unique tokens", count = tf.len())
-    }
-
+    let tf_index: String = serde_json::from_reader(index_file)?;
+    println!(
+        "{index_path} contains {count} files",
+        count = tf_index.len()
+    );
     Ok(())
 }
+
+// fn main() -> io::Result<()> {
+//     let dir_path = "docs.gl/gl4";
+//     let dir = read_dir(dir_path)?;
+//     let top_n = 20;
+//     let mut tf_index = TermFreqIndex::new();
+
+//     for file in dir {
+//         let file_path = file?.path();
+
+//         println!("Indexing {file_path:?}...");
+
+//         let content = read_entire_xml_file(&file_path)?
+//             .chars()
+//             .collect::<Vec<_>>();
+
+//         let mut table_freq = TermFreq::new();
+
+//         for token in Lexer::new(&content) {
+//             let term = token
+//                 .iter()
+//                 .map(|c| c.to_ascii_uppercase())
+//                 .collect::<String>();
+
+//             if let Some(freq) = table_freq.get_mut(&term) {
+//                 *freq += 1;
+//             } else {
+//                 table_freq.insert(term, 1);
+//             };
+//         }
+
+//         let mut stats = table_freq.iter().collect::<Vec<_>>();
+//         stats.sort_by_key(|f| f.1);
+//         stats.reverse();
+
+//         tf_index.insert(file_path, table_freq);
+//     }
+
+//     let index_path = "index.json";
+//     println!("Saving {index_path}...");
+//     let index_file = File::create(index_path)?;
+
+//     let json = serde_json::to_string(&tf_index)?;
+
+//     serde_json::to_writer_pretty(index_file, &json)?;
+
+//     for (path, tf) in tf_index {
+//         println!("{path:?} has {count} unique tokens", count = tf.len())
+//     }
+
+//     Ok(())
+// }
