@@ -85,41 +85,40 @@ fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
 }
 
 fn main() -> io::Result<()> {
-    let content = read_entire_xml_file("docs.gl/gl4/glBeginQuery.xhtml")?
-        .chars()
-        .collect::<Vec<_>>();
+    let dir_path = "docs.gl/gl4";
+    let dir = read_dir(dir_path)?;
 
-    let mut table_freq = HashMap::<String, usize>::new();
+    for file in dir {
+        let file_path = file?.path();
 
-    for token in Lexer::new(&content) {
-        let term = token
-            .iter()
-            .map(|c| c.to_ascii_uppercase())
-            .collect::<String>();
+        let content = read_entire_xml_file(&file_path)?
+            .chars()
+            .collect::<Vec<_>>();
 
-        if let Some(freq) = table_freq.get_mut(&term) {
-            *freq += 1;
-        } else {
-            table_freq.insert(term, 1);
-        };
+        let mut table_freq = HashMap::<String, usize>::new();
+
+        for token in Lexer::new(&content) {
+            let term = token
+                .iter()
+                .map(|c| c.to_ascii_uppercase())
+                .collect::<String>();
+
+            if let Some(freq) = table_freq.get_mut(&term) {
+                *freq += 1;
+            } else {
+                table_freq.insert(term, 1);
+            };
+        }
+
+        let mut stats = table_freq.iter().collect::<Vec<_>>();
+        stats.sort_by_key(|f| f.1);
+        stats.reverse();
+
+        println!("{file_path:?}");
+        for (t, f) in stats.iter().take(10) {
+            println!("{t} => {f}");
+        }
     }
-
-    let mut stats = table_freq.iter().collect::<Vec<_>>();
-    stats.sort_by_key(|f| f.1);
-    stats.reverse();
-
-    for (t, f) in stats.iter().take(10) {
-        println!("{t} => {f}");
-    }
-
-    // let dir_path = "docs.gl/gl4";
-    // let dir = read_dir(dir_path)?;
-
-    // for file in dir {
-    //     let file_path = file?.path();
-    //     let content = read_entire_xml_file(&file_path)?;
-    //     println!("{file_path:?} => {size}", size = content.len());
-    // }
 
     Ok(())
 }
