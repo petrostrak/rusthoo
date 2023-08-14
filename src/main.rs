@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs::{read_dir, File},
     io,
-    path::Path,
+    path::{Path, PathBuf},
 };
 use xml::reader::{EventReader, XmlEvent};
 
@@ -66,7 +66,7 @@ impl<'a> Iterator for Lexer<'a> {
     }
 }
 
-fn index_document(content: &str) -> HashMap<String, usize> {
+fn index_document(content: &str) -> TermFreq {
     todo!("not implemented")
 }
 
@@ -84,19 +84,25 @@ fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
     Ok(content)
 }
 
+type TermFreq = HashMap<String, usize>;
+type TermFreqIndex = HashMap<PathBuf, TermFreq>;
+
 fn main() -> io::Result<()> {
     let dir_path = "docs.gl/gl4";
     let dir = read_dir(dir_path)?;
     let top_n = 20;
+    let mut tf_index = TermFreqIndex::new();
 
     for file in dir {
         let file_path = file?.path();
+
+        println!("Indexing {file_path:?}...");
 
         let content = read_entire_xml_file(&file_path)?
             .chars()
             .collect::<Vec<_>>();
 
-        let mut table_freq = HashMap::<String, usize>::new();
+        let mut table_freq = TermFreq::new();
 
         for token in Lexer::new(&content) {
             let term = token
@@ -115,10 +121,11 @@ fn main() -> io::Result<()> {
         stats.sort_by_key(|f| f.1);
         stats.reverse();
 
-        println!("{file_path:?}");
-        for (t, f) in stats.iter().take(top_n) {
-            println!("{t} => {f}");
-        }
+        tf_index.insert(file_path, table_freq);
+    }
+
+    for (path, tf) in tf_index {
+        println!("{path:?} has {count} unique tokens", count = tf.len())
     }
 
     Ok(())
