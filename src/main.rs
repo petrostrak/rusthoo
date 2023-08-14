@@ -87,6 +87,7 @@ fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
 fn main() -> io::Result<()> {
     let dir_path = "docs.gl/gl4";
     let dir = read_dir(dir_path)?;
+    let top_n = 20;
 
     for file in dir {
         let file_path = file?.path();
@@ -115,7 +116,7 @@ fn main() -> io::Result<()> {
         stats.reverse();
 
         println!("{file_path:?}");
-        for (t, f) in stats.iter().take(10) {
+        for (t, f) in stats.iter().take(top_n) {
             println!("{t} => {f}");
         }
     }
