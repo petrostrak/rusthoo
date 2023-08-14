@@ -1,2 +1,2 @@
 # rusthoo
-A search engine in rust
+A local search engine in rust
