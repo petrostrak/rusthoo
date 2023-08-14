@@ -124,6 +124,14 @@ fn main() -> io::Result<()> {
         tf_index.insert(file_path, table_freq);
     }
 
+    let index_path = "index.json";
+    println!("Saving {index_path}...");
+    let index_file = File::create(index_path)?;
+
+    let json = serde_json::to_string(&tf_index)?;
+
+    serde_json::to_writer_pretty(index_file, &json)?;
+
     for (path, tf) in tf_index {
         println!("{path:?} has {count} unique tokens", count = tf.len())
     }
