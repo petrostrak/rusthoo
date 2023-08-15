@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
     process::ExitCode,
 };
+use tiny_http::{Response, Server};
 use xml::reader::{EventReader, XmlEvent};
 
 #[derive(Debug)]
@@ -153,9 +154,12 @@ type TermFreqIndex = HashMap<PathBuf, TermFreq>;
 fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
-    eprintln!("    index <folder> [address]       index the <folder> and seva the index to index.json file");
+    eprintln!("    index <folder> [address]            index the <folder> and seva the index to index.json file");
     eprintln!(
         "    search <index-file> [address]       check how many documents are indexed in the file"
+    );
+    eprintln!(
+        "    serve [address]                      start local HTTP server with Web Interface "
     );
 }
 
@@ -186,6 +190,25 @@ fn entry() -> Result<(), ()> {
             })?;
 
             check_index(&index_path)?;
+        }
+        "serve" => {
+            let address = args.next().unwrap_or("127.0.0.1:6969".to_owned());
+            let server = Server::http(&address).unwrap();
+
+            println!("INFO: listening at http://{address}/");
+
+            for request in server.incoming_requests() {
+                println!(
+                    "received request! method: {:?}, url: {:?}, headers: {:?}",
+                    request.method(),
+                    request.url(),
+                    request.headers()
+                );
+
+                let response = Response::from_string("hello world");
+                request.respond(response).unwrap();
+            }
+            todo!("not yet implemented")
         }
 
         _ => {
