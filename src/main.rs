@@ -86,13 +86,9 @@ fn save_tf_index(tf_index: &TermFreqIndex, index_path: &str) -> Result<(), ()> {
     println!("Saving {index_path}...");
     let index_file = File::create(index_path).unwrap();
 
-    let json = serde_json::to_string(&tf_index).or_else(|err| {
-        return Err(());
-    });
+    let json = serde_json::to_string(&tf_index).unwrap();
 
-    serde_json::to_writer_pretty(index_file, &json).or_else(|err| {
-        return Err(());
-    });
+    serde_json::to_writer_pretty(index_file, &json).unwrap();
 
     for (path, tf) in tf_index {
         println!("{path:?} has {count} unique tokens", count = tf.len())
@@ -115,7 +111,6 @@ fn check_index(index_path: &str) -> Result<(), ()> {
 
 fn tf_index_of_folder(dir_path: &str, tf_index: &mut TermFreqIndex) -> Result<(), ()> {
     let dir = read_dir(dir_path).unwrap();
-    let top_n = 20;
 
     for file in dir {
         let file_path = file.unwrap().path();
