@@ -200,10 +200,17 @@ fn serve_request(mut request: Request) -> Result<(), ()> {
         (Method::Post, "/api/search") => {
             let mut buf = Vec::new();
             request.as_reader().read_to_end(&mut buf);
-            let body = str::from_utf8(&buf).map_err(|err| {
-                eprintln!("ERROR: could not interpret body as UTF-8 string: {err}");
-            })?;
-            println!("Search: {body}");
+            let body = str::from_utf8(&buf)
+                .map_err(|err| {
+                    eprintln!("ERROR: could not interpret body as UTF-8 string: {err}");
+                })?
+                .chars()
+                .collect::<Vec<_>>();
+
+            for token in Lexer::new(&body) {
+                println!("{token:?}");
+            }
+
             request.respond(Response::from_string("ok")).map_err(|err| {
                 eprintln!("{err}");
             })
