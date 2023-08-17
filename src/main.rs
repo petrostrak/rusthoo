@@ -167,6 +167,27 @@ fn usage(program: &str) {
     );
 }
 
+fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> Result<(), ()> {
+    let content_type_header = Header::from_bytes("Content-Type", content_type)
+        .expect("that we didn't put any bad headers");
+    let file = File::open(file_path).map_err(|err| {
+        eprintln!("ERROR: could not serve file {file_path}: {err}");
+    })?;
+    let response = Response::from_file(file).with_header(content_type_header);
+
+    request.respond(response).map_err(|err| {
+        eprintln!("ERROR: could not serve static file {file_path}: {err}");
+    })
+}
+
+fn serve_404(request: Request) -> Result<(), ()> {
+    request
+        .respond(Response::from_string("404").with_status_code(StatusCode(404)))
+        .map_err(|err| {
+            println!("ERROR: could not serve request {err}");
+        })
+}
+
 fn serve_request(request: Request) -> Result<(), ()> {
     println!(
         "received request! method: {:?}, url: {:?}, headers: {:?}",
@@ -176,40 +197,12 @@ fn serve_request(request: Request) -> Result<(), ()> {
     );
 
     match (request.method(), request.url()) {
-        (Method::Get, "/index.js") => {
-            let content_type_text_js = Header::from_bytes("Content-Type", "text/javascript")
-                .expect("that we didn't put any bad headers");
-
-            let index_js_path = "index.js";
-            let index_js_file = File::open(index_js_path).map_err(|err| {
-                println!("ERROR: could not serve file {index_js_path}: {err}");
-            })?;
-            let response = Response::from_file(index_js_file).with_header(content_type_text_js);
-            request.respond(response).map_err(|err| {
-                println!("ERROR: could not serve request {err}");
-            })?;
-        }
+        (Method::Get, "/index.js") => serve_static_file(request, "index.js", "text/javascript"),
         (Method::Get, "/") | (Method::Get, "/index.html") => {
-            let content_type_text_html = Header::from_bytes("Content-Type", "text/html")
-                .expect("that we didn't put any bad headers");
-
-            let index_html_path = "index.html";
-            let index_html_file = File::open(index_html_path).map_err(|err| {
-                println!("ERROR: could not serve file {index_html_path}: {err}");
-            })?;
-            let response = Response::from_file(index_html_file).with_header(content_type_text_html);
-            request.respond(response).map_err(|err| {
-                println!("ERROR: could not serve request {err}");
-            })?;
+            serve_static_file(request, "index.html", "text/html")
         }
-        _ => request
-            .respond(Response::from_string("404").with_status_code(StatusCode(404)))
-            .map_err(|err| {
-                println!("ERROR: could not serve request {err}");
-            })?,
+        _ => serve_404(request),
     }
-
-    Ok(())
 }
 
 fn entry() -> Result<(), ()> {
