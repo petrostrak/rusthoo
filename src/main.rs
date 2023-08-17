@@ -1,226 +1,223 @@
-use std::{
-    collections::HashMap,
-    env,
-    fs::{read_dir, File},
-    io,
-    path::{Path, PathBuf},
-    process::ExitCode,
-    str,
-};
-use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
-use xml::{
-    common::{Position, TextPosition},
-    reader::{EventReader, XmlEvent},
-};
+use std::env;
+use std::fs::{self, File};
+use std::io::{BufReader, BufWriter};
+use std::path::Path;
+use std::process::ExitCode;
+use std::result::Result;
+use std::str;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use xml::common::{Position, TextPosition};
+use xml::reader::{EventReader, XmlEvent};
 
-#[derive(Debug)]
-struct Lexer<'a> {
-    content: &'a [char],
+mod model;
+use model::*;
+mod lexer;
+mod server;
+pub mod snowball;
+
+fn parse_entire_txt_file(file_path: &Path) -> Result<String, ()> {
+    fs::read_to_string(file_path).map_err(|err| {
+        eprintln!(
+            "ERROR: coult not open file {file_path}: {err}",
+            file_path = file_path.display()
+        );
+    })
 }
 
-impl<'a> Lexer<'a> {
-    fn new(content: &'a [char]) -> Self {
-        Self { content }
-    }
+fn parse_entire_pdf_file(file_path: &Path) -> Result<String, ()> {
+    use poppler::Document;
+    use std::io::Read;
 
-    fn trim_left(&mut self) {
-        // trim whitespaces from the left
-        while self.content.len() > 0 && self.content[0].is_whitespace() {
-            self.content = &self.content[1..];
+    let mut content = Vec::new();
+    File::open(file_path)
+        .and_then(|mut file| file.read_to_end(&mut content))
+        .map_err(|err| {
+            eprintln!(
+                "ERROR: could not read file {file_path}: {err}",
+                file_path = file_path.display()
+            );
+        })?;
+
+    let pdf = Document::from_data(&content, None).map_err(|err| {
+        eprintln!(
+            "ERROR: could not read file {file_path}: {err}",
+            file_path = file_path.display()
+        );
+    })?;
+
+    let mut result = String::new();
+
+    let n = pdf.n_pages();
+    for i in 0..n {
+        let page = pdf.page(i).expect(&format!(
+            "{i} is within the bounds of the range of the page"
+        ));
+        if let Some(content) = page.text() {
+            result.push_str(content.as_str());
+            result.push(' ');
         }
     }
 
-    fn chop(&mut self, n: usize) -> &'a [char] {
-        let token = &self.content[0..n];
-        self.content = &self.content[n..];
-        token
-    }
-
-    fn chop_while<P>(&mut self, mut predicate: P) -> &'a [char]
-    where
-        P: FnMut(&char) -> bool,
-    {
-        let mut n = 0;
-        while n < self.content.len() && predicate(&self.content[n]) {
-            n += 1;
-        }
-        self.chop(n)
-    }
-
-    fn next_token(&mut self) -> Option<&'a [char]> {
-        // trim whitespaces from the left
-        self.trim_left();
-        if self.content.len() == 0 {
-            return None;
-        }
-
-        if self.content[0].is_numeric() {
-            return Some(self.chop_while(|c| c.is_numeric()));
-        }
-
-        if self.content[0].is_alphabetic() {
-            return Some(self.chop_while(|c| c.is_alphanumeric()));
-        }
-
-        return Some(self.chop(1));
-    }
+    Ok(result)
 }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = &'a [char];
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
-    }
-}
-
-fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
-    let file = File::open(file_path)?;
-    let event_reader = EventReader::new(file);
-
+fn parse_entire_xml_file(file_path: &Path) -> Result<String, ()> {
+    let file = File::open(file_path).map_err(|err| {
+        eprintln!(
+            "ERROR: could not open file {file_path}: {err}",
+            file_path = file_path.display()
+        );
+    })?;
+    let er = EventReader::new(BufReader::new(file));
     let mut content = String::new();
-    for event in event_reader.into_iter() {
-        if let XmlEvent::Characters(text) = event.expect("TODO") {
+    for event in er.into_iter() {
+        let event = event.map_err(|err| {
+            let TextPosition { row, column } = err.position();
+            let msg = err.msg();
+            eprintln!(
+                "{file_path}:{row}:{column}: ERROR: {msg}",
+                file_path = file_path.display()
+            );
+        })?;
+
+        if let XmlEvent::Characters(text) = event {
             content.push_str(&text);
-            content.push_str(" ");
+            content.push(' ');
         }
     }
     Ok(content)
 }
 
-fn save_tf_index(tf_index: &TermFreqIndex, index_path: &str) -> Result<(), ()> {
-    println!("Saving {index_path}...");
-    let index_file = File::create(index_path).unwrap();
-
-    let json = serde_json::to_string(&tf_index).unwrap();
-
-    serde_json::to_writer_pretty(index_file, &json).unwrap();
-
-    for (path, tf) in tf_index {
-        println!("{path:?} has {count} unique tokens", count = tf.len())
+fn parse_entire_file_by_extension(file_path: &Path) -> Result<String, ()> {
+    let extension = file_path
+        .extension()
+        .ok_or_else(|| {
+            eprintln!(
+                "ERROR: can't detect file type of {file_path} without extension",
+                file_path = file_path.display()
+            );
+        })?
+        .to_string_lossy();
+    match extension.as_ref() {
+        "xhtml" | "xml" => parse_entire_xml_file(file_path),
+        // TODO: specialized parser for markdown files
+        "txt" | "md" => parse_entire_txt_file(file_path),
+        "pdf" => parse_entire_pdf_file(file_path),
+        _ => {
+            eprintln!(
+                "ERROR: can't detect file type of {file_path}: unsupported extension {extension}",
+                file_path = file_path.display(),
+                extension = extension
+            );
+            Err(())
+        }
     }
+}
+
+fn save_model_as_json(model: &Model, index_path: &Path) -> Result<(), ()> {
+    println!("Saving {index_path}...", index_path = index_path.display());
+
+    let index_file = File::create(index_path).map_err(|err| {
+        eprintln!(
+            "ERROR: could not create index file {index_path}: {err}",
+            index_path = index_path.display()
+        );
+    })?;
+
+    serde_json::to_writer(BufWriter::new(index_file), &model).map_err(|err| {
+        eprintln!(
+            "ERROR: could not serialize index into file {index_path}: {err}",
+            index_path = index_path.display()
+        );
+    })?;
 
     Ok(())
 }
 
-fn check_index(index_path: &str) -> Result<(), ()> {
-    let index_file = File::open(index_path).unwrap();
-    println!("Reading {index_path} index file...");
+fn add_folder_to_model(
+    dir_path: &Path,
+    model: Arc<Mutex<Model>>,
+    processed: &mut usize,
+) -> Result<(), ()> {
+    let dir = fs::read_dir(dir_path).map_err(|err| {
+        eprintln!(
+            "ERROR: could not open directory {dir_path} for indexing: {err}",
+            dir_path = dir_path.display()
+        );
+    })?;
 
-    let tf_index: String = serde_json::from_reader(index_file).unwrap();
-    println!(
-        "{index_path} contains {count} files",
-        count = tf_index.len()
-    );
-    Ok(())
-}
+    'next_file: for file in dir {
+        let file = file.map_err(|err| {
+            eprintln!(
+                "ERROR: could not read next file in directory {dir_path} during indexing: {err}",
+                dir_path = dir_path.display()
+            );
+        })?;
 
-fn tf_index_of_folder(dir_path: &str, tf_index: &mut TermFreqIndex) -> Result<(), ()> {
-    let dir = read_dir(dir_path).unwrap();
+        let file_path = file.path();
 
-    for file in dir {
-        let file_path = file.unwrap().path();
+        let dot_file = file_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.starts_with("."))
+            .unwrap_or(false);
 
-        println!("Indexing {file_path:?}...");
-
-        let content = read_entire_xml_file(&file_path)
-            .unwrap()
-            .chars()
-            .collect::<Vec<_>>();
-
-        let mut table_freq = TermFreq::new();
-
-        for token in Lexer::new(&content) {
-            let term = token
-                .iter()
-                .map(|c| c.to_ascii_uppercase())
-                .collect::<String>();
-
-            if let Some(freq) = table_freq.get_mut(&term) {
-                *freq += 1;
-            } else {
-                table_freq.insert(term, 1);
-            };
+        if dot_file {
+            continue 'next_file;
         }
 
-        let mut stats = table_freq.iter().collect::<Vec<_>>();
-        stats.sort_by_key(|f| f.1);
-        stats.reverse();
+        let file_type = file.file_type().map_err(|err| {
+            eprintln!(
+                "ERROR: could not determine type of file {file_path}: {err}",
+                file_path = file_path.display()
+            );
+        })?;
+        let last_modified = file
+            .metadata()
+            .map_err(|err| {
+                eprintln!(
+                    "ERROR: could not get the metadata of file {file_path}: {err}",
+                    file_path = file_path.display()
+                );
+            })?
+            .modified()
+            .map_err(|err| {
+                eprintln!(
+                    "ERROR: could not get the last modification date of file {file_path}: {err}",
+                    file_path = file_path.display()
+                )
+            })?;
 
-        tf_index.insert(file_path, table_freq);
+        if file_type.is_dir() {
+            add_folder_to_model(&file_path, Arc::clone(&model), processed)?;
+            continue 'next_file;
+        }
+
+        // TODO: how does this work with symlinks?
+
+        let mut model = model.lock().unwrap();
+        if model.requires_reindexing(&file_path, last_modified) {
+            println!("Indexing {:?}...", &file_path);
+
+            let content = match parse_entire_file_by_extension(&file_path) {
+                Ok(content) => content.chars().collect::<Vec<_>>(),
+                // TODO: still add the skipped files to the model to prevent their reindexing in the future
+                Err(()) => continue 'next_file,
+            };
+
+            model.add_document(file_path, last_modified, &content);
+            *processed += 1;
+        }
     }
 
     Ok(())
 }
-
-type TermFreq = HashMap<String, usize>;
-type TermFreqIndex = HashMap<PathBuf, TermFreq>;
 
 fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
-    eprintln!("    index <folder> [address]            index the <folder> and seva the index to index.json file");
-    eprintln!(
-        "    search <index-file> [address]       check how many documents are indexed in the file"
-    );
-    eprintln!(
-        "    serve [address]                      start local HTTP server with Web Interface "
-    );
-}
-
-fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> Result<(), ()> {
-    let content_type_header = Header::from_bytes("Content-Type", content_type)
-        .expect("that we didn't put any bad headers");
-    let file = File::open(file_path).map_err(|err| {
-        eprintln!("ERROR: could not serve file {file_path}: {err}");
-    })?;
-    let response = Response::from_file(file).with_header(content_type_header);
-
-    request.respond(response).map_err(|err| {
-        eprintln!("ERROR: could not serve static file {file_path}: {err}");
-    })
-}
-
-fn serve_404(request: Request) -> Result<(), ()> {
-    request
-        .respond(Response::from_string("404").with_status_code(StatusCode(404)))
-        .map_err(|err| {
-            println!("ERROR: could not serve request {err}");
-        })
-}
-
-fn serve_request(mut request: Request) -> Result<(), ()> {
-    println!(
-        "received request! method: {:?}, url: {:?}, headers: {:?}",
-        request.method(),
-        request.url(),
-        request.headers()
-    );
-
-    match (request.method(), request.url()) {
-        (Method::Post, "/api/search") => {
-            let mut buf = Vec::new();
-            request.as_reader().read_to_end(&mut buf);
-            let body = str::from_utf8(&buf)
-                .map_err(|err| {
-                    eprintln!("ERROR: could not interpret body as UTF-8 string: {err}");
-                })?
-                .chars()
-                .collect::<Vec<_>>();
-
-            for token in Lexer::new(&body) {
-                println!("{token:?}");
-            }
-
-            request.respond(Response::from_string("ok")).map_err(|err| {
-                eprintln!("{err}");
-            })
-        }
-        (Method::Get, "/index.js") => serve_static_file(request, "index.js", "text/javascript"),
-        (Method::Get, "/") | (Method::Get, "/index.html") => {
-            serve_static_file(request, "index.html", "text/html")
-        }
-        _ => serve_404(request),
-    }
+    eprintln!("    serve <folder> [address]       start local HTTP server with Web Interface");
 }
 
 fn entry() -> Result<(), ()> {
@@ -233,44 +230,69 @@ fn entry() -> Result<(), ()> {
     })?;
 
     match subcommand.as_str() {
-        "index" => {
+        "serve" => {
             let dir_path = args.next().ok_or_else(|| {
                 usage(&program);
-                eprintln!("ERROR: no directory provided for {subcommand} subcommand");
+                eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
-            let mut tf_index = TermFreqIndex::new();
-            tf_index_of_folder(&dir_path, &mut tf_index)?;
-            save_tf_index(&tf_index, "index.json")?;
-        }
-        "search" => {
-            let index_path = args.next().ok_or_else(|| {
-                usage(&program);
-                eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
+            let mut index_path = Path::new(&dir_path).to_path_buf();
+            index_path.push(".seroost.json");
+
+            let address = args.next().unwrap_or("127.0.0.1:6969".to_string());
+
+            let exists = index_path.try_exists().map_err(|err| {
+                eprintln!(
+                    "ERROR: could not check the existence of file {index_path}: {err}",
+                    index_path = index_path.display()
+                );
             })?;
 
-            check_index(&index_path)?;
-        }
-        "serve" => {
-            let address = args.next().unwrap_or("127.0.0.1:6969".to_owned());
-            let server = Server::http(&address).unwrap();
+            let model: Arc<Mutex<Model>>;
+            if exists {
+                let index_file = File::open(&index_path).map_err(|err| {
+                    eprintln!(
+                        "ERROR: could not open index file {index_path}: {err}",
+                        index_path = index_path.display()
+                    );
+                })?;
 
-            println!("INFO: listening at http://{address}/");
-
-            for request in server.incoming_requests() {
-                serve_request(request);
+                model = Arc::new(Mutex::new(serde_json::from_reader(index_file).map_err(
+                    |err| {
+                        eprintln!(
+                            "ERROR: could not parse index file {index_path}: {err}",
+                            index_path = index_path.display()
+                        );
+                    },
+                )?));
+            } else {
+                model = Arc::new(Mutex::new(Default::default()));
             }
-            todo!("not yet implemented")
+
+            {
+                let model = Arc::clone(&model);
+                thread::spawn(move || {
+                    let mut processed = 0;
+                    // TODO: what should we do in case indexing thread crashes
+                    add_folder_to_model(Path::new(&dir_path), Arc::clone(&model), &mut processed)
+                        .unwrap();
+                    if processed > 0 {
+                        let model = model.lock().unwrap();
+                        save_model_as_json(&model, &index_path).unwrap();
+                    }
+                    println!("Finished indexing");
+                });
+            }
+
+            server::start(&address, Arc::clone(&model))
         }
 
         _ => {
             usage(&program);
             eprintln!("ERROR: unknown subcommand {subcommand}");
-            return Err(());
+            Err(())
         }
     }
-
-    Ok(())
 }
 
 fn main() -> ExitCode {
