@@ -5,7 +5,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::ExitCode,
-    str::FromStr,
+    str,
 };
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use xml::{
@@ -188,7 +188,7 @@ fn serve_404(request: Request) -> Result<(), ()> {
         })
 }
 
-fn serve_request(request: Request) -> Result<(), ()> {
+fn serve_request(mut request: Request) -> Result<(), ()> {
     println!(
         "received request! method: {:?}, url: {:?}, headers: {:?}",
         request.method(),
@@ -197,6 +197,17 @@ fn serve_request(request: Request) -> Result<(), ()> {
     );
 
     match (request.method(), request.url()) {
+        (Method::Post, "/api/search") => {
+            let mut buf = Vec::new();
+            request.as_reader().read_to_end(&mut buf);
+            let body = str::from_utf8(&buf).map_err(|err| {
+                eprintln!("ERROR: could not interpret body as UTF-8 string: {err}");
+            })?;
+            println!("Search: {body}");
+            request.respond(Response::from_string("ok")).map_err(|err| {
+                eprintln!("{err}");
+            })
+        }
         (Method::Get, "/index.js") => serve_static_file(request, "index.js", "text/javascript"),
         (Method::Get, "/") | (Method::Get, "/index.html") => {
             serve_static_file(request, "index.html", "text/html")
