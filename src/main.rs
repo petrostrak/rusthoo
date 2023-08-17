@@ -7,7 +7,7 @@ use std::{
     process::ExitCode,
     str::FromStr,
 };
-use tiny_http::{Header, Request, Response, Server};
+use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use xml::{
     common::{Position, TextPosition},
     reader::{EventReader, XmlEvent},
@@ -175,17 +175,39 @@ fn serve_request(request: Request) -> Result<(), ()> {
         request.headers()
     );
 
-    let content_type_text_html = Header::from_bytes("Content-Type", "text/html")
-        .expect("that we didn't put any bad headers");
+    match (request.method(), request.url()) {
+        (Method::Get, "/index.js") => {
+            let content_type_text_js = Header::from_bytes("Content-Type", "text/javascript")
+                .expect("that we didn't put any bad headers");
 
-    let index_html_path = "index.html";
-    let index_html_file = File::open(index_html_path).map_err(|err| {
-        println!("ERROR: could not serve file {index_html_path}: {err}");
-    })?;
-    let response = Response::from_file(index_html_file).with_header(content_type_text_html);
-    request.respond(response).map_err(|err| {
-        println!("ERROR: could not serve request {err}");
-    })?;
+            let index_js_path = "index.js";
+            let index_js_file = File::open(index_js_path).map_err(|err| {
+                println!("ERROR: could not serve file {index_js_path}: {err}");
+            })?;
+            let response = Response::from_file(index_js_file).with_header(content_type_text_js);
+            request.respond(response).map_err(|err| {
+                println!("ERROR: could not serve request {err}");
+            })?;
+        }
+        (Method::Get, "/") | (Method::Get, "/index.html") => {
+            let content_type_text_html = Header::from_bytes("Content-Type", "text/html")
+                .expect("that we didn't put any bad headers");
+
+            let index_html_path = "index.html";
+            let index_html_file = File::open(index_html_path).map_err(|err| {
+                println!("ERROR: could not serve file {index_html_path}: {err}");
+            })?;
+            let response = Response::from_file(index_html_file).with_header(content_type_text_html);
+            request.respond(response).map_err(|err| {
+                println!("ERROR: could not serve request {err}");
+            })?;
+        }
+        _ => request
+            .respond(Response::from_string("404").with_status_code(StatusCode(404)))
+            .map_err(|err| {
+                println!("ERROR: could not serve request {err}");
+            })?,
+    }
 
     Ok(())
 }
