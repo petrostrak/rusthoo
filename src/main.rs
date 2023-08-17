@@ -5,8 +5,9 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::ExitCode,
+    str::FromStr,
 };
-use tiny_http::{Response, Server};
+use tiny_http::{Header, Response, Server};
 use xml::reader::{EventReader, XmlEvent};
 
 #[derive(Debug)]
@@ -205,7 +206,21 @@ fn entry() -> Result<(), ()> {
                     request.headers()
                 );
 
-                let response = Response::from_string("hello world");
+                let content_type_text_html = Header::from_bytes("Content-Type", "text/html")
+                    .expect("that we didn't put any bad headers");
+                let response = Response::from_string(
+                    r#"
+                    <html>
+                        <head>
+                            <title>Rusthoo</title>
+                        </head>
+                        <body>
+                            <h1>Hello, world!</h1>
+                        </body>
+                    </html>
+                "#,
+                )
+                .with_header(content_type_text_html);
                 request.respond(response).unwrap();
             }
             todo!("not yet implemented")
