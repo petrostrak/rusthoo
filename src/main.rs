@@ -7,8 +7,11 @@ use std::{
     process::ExitCode,
     str::FromStr,
 };
-use tiny_http::{Header, Response, Server};
-use xml::reader::{EventReader, XmlEvent};
+use tiny_http::{Header, Request, Response, Server};
+use xml::{
+    common::{Position, TextPosition},
+    reader::{EventReader, XmlEvent},
+};
 
 #[derive(Debug)]
 struct Lexer<'a> {
@@ -164,6 +167,29 @@ fn usage(program: &str) {
     );
 }
 
+fn serve_request(request: Request) -> Result<(), ()> {
+    println!(
+        "received request! method: {:?}, url: {:?}, headers: {:?}",
+        request.method(),
+        request.url(),
+        request.headers()
+    );
+
+    let content_type_text_html = Header::from_bytes("Content-Type", "text/html")
+        .expect("that we didn't put any bad headers");
+
+    let index_html_path = "index.html";
+    let index_html_file = File::open(index_html_path).map_err(|err| {
+        println!("ERROR: could not serve file {index_html_path}: {err}");
+    })?;
+    let response = Response::from_file(index_html_file).with_header(content_type_text_html);
+    request.respond(response).map_err(|err| {
+        println!("ERROR: could not serve request {err}");
+    })?;
+
+    Ok(())
+}
+
 fn entry() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
@@ -199,29 +225,7 @@ fn entry() -> Result<(), ()> {
             println!("INFO: listening at http://{address}/");
 
             for request in server.incoming_requests() {
-                println!(
-                    "received request! method: {:?}, url: {:?}, headers: {:?}",
-                    request.method(),
-                    request.url(),
-                    request.headers()
-                );
-
-                let content_type_text_html = Header::from_bytes("Content-Type", "text/html")
-                    .expect("that we didn't put any bad headers");
-                let response = Response::from_string(
-                    r#"
-                    <html>
-                        <head>
-                            <title>Rusthoo</title>
-                        </head>
-                        <body>
-                            <h1>Hello, world!</h1>
-                        </body>
-                    </html>
-                "#,
-                )
-                .with_header(content_type_text_html);
-                request.respond(response).unwrap();
+                serve_request(request);
             }
             todo!("not yet implemented")
         }
